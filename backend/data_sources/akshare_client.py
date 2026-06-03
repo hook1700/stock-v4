@@ -3,24 +3,47 @@ import pandas as pd
 from datetime import datetime, timedelta
 import logging
 import time
+import threading
 
 logger = logging.getLogger(__name__)
 
+# 全局锁，确保 AKShare 所有操作串行执行（同一时间只有一个请求）
+_api_lock = threading.Lock()
+# 上次请求时间（用于限频）
+_last_request_time = 0
+_min_interval = 0.5  # AKShare 请求最小间隔(秒)，适当加大间隔避免限频
+
+
 class AKShareClient:
-    def __init__(self):
-        self.last_request_time = 0
-        self.min_interval = 0.2  # 最小请求间隔(秒)
+    """AKShare 数据客户端，所有 API 调用均串行执行并限频"""
     
-    def _rate_limit(self):
-        current = time.time()
-        elapsed = current - self.last_request_time
-        if elapsed < self.min_interval:
-            time.sleep(self.min_interval - elapsed)
-        self.last_request_time = time.time()
+    def __init__(self):
+        pass
+    
+    @classmethod
+    def _wait_if_needed(cls):
+        """限频等待：确保两次请求之间至少有 _min_interval 秒的间隔"""
+        global _last_request_time
+        while True:
+            with cls._api_lock:
+                # 再次检查，因为可能在我们等待锁的时候，其他线程已经更新了时间
+                now = time.time()
+                elapsed = now - _last_request_time
+                if elapsed >= _min_interval:
+                    # 足够间隔，更新时间并退出
+                    _last_request_time = now
+                    return
+                else:
+                    # 不够间隔，计算需要等待的时间
+                    sleep_time = _min_interval - elapsed
+            # 在锁外等待，避免阻塞其他线程
+            logger.debug(f'AKShare 限频等待: {sleep_time:.2f}秒')
+            time.sleep(sleep_time)
     
     def get_a_stock_list(self):
+        """获取A股列表（串行 + 限频）"""
+        self._wait_if_needed()
         try:
-            self._rate_limit()
             df = ak.stock_zh_a_spot_em()
             # 重命名列以匹配我们的格式
             df = df.rename(columns={
@@ -38,8 +61,9 @@ class AKShareClient:
             return pd.DataFrame()
     
     def get_stock_history(self, stock_code, period='daily', start_date=None, end_date=None):
+        """获取股票历史数据（串行 + 限频）"""
+        self._wait_if_needed()
         try:
-            self._rate_limit()
             if start_date is None:
                 start_date = (datetime.now() - timedelta(days=365)).strftime('%Y%m%d')
             if end_date is None:
@@ -77,8 +101,9 @@ class AKShareClient:
             return pd.DataFrame()
     
     def get_industry_classification(self):
+        """获取申万行业分类（串行 + 限频）"""
+        self._wait_if_needed()
         try:
-            self._rate_limit()
             df = ak.stock_industry_category_sw()
             return df
         except Exception as e:
@@ -86,8 +111,9 @@ class AKShareClient:
             return pd.DataFrame()
     
     def get_stock_industry_sw(self, stock_code):
+        """获取股票行业信息（串行 + 限频）"""
+        self._wait_if_needed()
         try:
-            self._rate_limit()
             df = ak.stock_individual_info_em(symbol=stock_code)
             return df
         except Exception as e:

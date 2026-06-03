@@ -30,10 +30,10 @@ class TaskScheduler:
             replace_existing=True
         )
         
-        # 每日00:00 执行策略
+        # 每日06:00 执行策略
         self.scheduler.add_job(
             self._execute_strategies_job,
-            CronTrigger(hour=0, minute=0),
+            CronTrigger(hour=6, minute=0),
             id='daily_strategy_execute',
             name='每日策略执行',
             replace_existing=True
