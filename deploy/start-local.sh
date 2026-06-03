@@ -77,6 +77,9 @@ case $MODE in
             cp .env.example .env
         fi
 
+        # 确保日志目录存在
+        mkdir -p "${BASE_DIR}/logs"
+
         # 启动基础设施
         docker compose up -d db redis
 
@@ -118,10 +121,10 @@ case $MODE in
         echo "  前端界面: http://localhost:3000"
         echo "  API文档:  http://localhost:8000/docs"
         echo ""
-        echo "日志文件:"
-        echo "  后端: $(realpath ../logs/backend.log)"
-        echo "  前端: $(realpath ../logs/frontend.log)"
-        echo ""
-        echo "停止服务: ./deploy/stop-local.sh"
+echo "日志文件:"
+echo "  后端: ${BASE_DIR}/logs/backend.log"
+echo "  前端: ${BASE_DIR}/logs/frontend.log"
+echo ""
+echo "停止服务: ./deploy/stop-local.sh"
         ;;
 esac
