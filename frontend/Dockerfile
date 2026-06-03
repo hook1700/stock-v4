@@ -15,7 +15,7 @@ COPY index.html ./
 COPY vite.config.js ./
 COPY nginx.conf ./
 COPY src ./src
-COPY public ./public
+RUN if [ -d public ] && [ -n "$(ls -A public 2>/dev/null)" ]; then cp -r public/* ./public/ 2>/dev/null || mkdir -p ./public; else mkdir -p ./public; fi
 
 RUN npm run build
 
