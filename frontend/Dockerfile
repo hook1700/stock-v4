@@ -7,8 +7,8 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install
 
-# 创建空的 postcss 配置文件，防止 vite 搜索时误解析 package.json
-RUN echo 'module.exports = {}' > postcss.config.js
+# 创建空的 postcss 配置文件 (ESM格式，因为 package.json 设置了 "type": "module")
+RUN echo 'export default {}' > postcss.config.js
 
 # 复制源码并构建（精确复制必要的文件，排除 package.json 的重复复制）
 COPY index.html ./
