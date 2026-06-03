@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 复制依赖文件并安装，然后清理编译器减小镜像体积
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
+RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt \
     && apt-get purge -y --auto-remove gcc
 
 # 复制应用代码
