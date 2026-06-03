@@ -18,8 +18,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 创建数据库表
-Base.metadata.create_all(bind=engine)
+# 创建数据库表（添加异常处理，避免因残留类型定义导致启动失败）
+try:
+    Base.metadata.create_all(bind=engine, checkfirst=True)
+    logger.info('数据库表检查/创建完成')
+except Exception as e:
+    logger.warning(f'数据库表创建时出现警告（表可能已存在）: {e}')
+    logger.info('将继续启动应用，假设数据库表已存在...')
 
 # 全局调度器实例
 scheduler = TaskScheduler()
