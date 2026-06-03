@@ -5,10 +5,6 @@ WORKDIR /app
 
 # 复制依赖文件
 COPY package.json ./
-
-# 在 package.json 中添加空的 postcss 配置，防止 PostCSS 配置加载器搜索并误解析其他文件
-RUN sed -i 's/}$/,\n  "postcss": {}}/' package.json
-
 RUN npm install
 
 # 复制源码并构建（精确复制必要的文件，排除 package.json 的重复复制）
