@@ -29,7 +29,7 @@ fi
 # 停止Docker容器
 echo "🐳 停止依赖服务 (PostgreSQL + Redis)..."
 cd "${BASE_DIR}"
-docker-compose down 2>/dev/null || true
+docker compose down 2>/dev/null || true
 
 echo ""
 echo "✅ 所有服务已停止"

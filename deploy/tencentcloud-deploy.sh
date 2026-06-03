@@ -30,7 +30,7 @@ fi
 # 步骤1: 本地构建镜像并推送到腾讯云镜像仓库（可选）
 echo ""
 echo "📦 步骤 1: 构建 Docker 镜像..."
-docker-compose -f docker-compose.yml build
+docker compose -f docker-compose.yml build
 
 # 步骤2: 压缩项目文件并上传到服务器
 echo ""
@@ -73,23 +73,23 @@ ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "root@${SERVER_HOST}" << EOF
         echo "  ⚠️  请编辑 ${REMOTE_DIR}/.env 文件并填写实际配置"
     fi
 
-    # 安装 Docker Compose（如未安装）
-    if ! command -v docker-compose &> /dev/null; then
-        echo "  安装 Docker Compose..."
-        curl -L "https://github.com/docker/compose/releases/download/v2.23.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-        chmod +x /usr/local/bin/docker-compose
+    # 安装 Docker Compose v2（如未安装）
+    if ! docker compose version &> /dev/null; then
+        echo "  安装 Docker Compose v2..."
+        apt-get update
+        apt-get install -y docker-compose-plugin
     fi
 
     # 启动 Docker
     echo "  启动 Docker 容器..."
-    docker-compose down --remove-orphans || true
-    docker-compose pull || true
-    docker-compose up -d --build
+    docker compose down --remove-orphans || true
+    docker compose pull || true
+    docker compose up -d --build
 
     # 显示容器状态
     echo ""
     echo "  容器运行状态:"
-    docker-compose ps
+    docker compose ps
 
     # 清理旧镜像
     echo ""

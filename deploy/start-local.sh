@@ -78,7 +78,7 @@ case $MODE in
         fi
 
         # 启动基础设施
-        docker-compose up -d db redis
+        docker compose up -d db redis
 
         echo ""
         echo "⏳ 等待数据库就绪..."

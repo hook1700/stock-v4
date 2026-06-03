@@ -43,7 +43,7 @@ cp .env.example .env
 cp .env.example .env
 
 # 2. 启动所有服务
-docker-compose up -d
+docker compose up -d
 
 # 3. 访问
 # 前端: http://localhost
