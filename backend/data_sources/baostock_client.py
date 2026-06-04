@@ -24,9 +24,9 @@ class BaoStockClient:
     @classmethod
     def _wait_if_needed(cls):
         """限频等待：确保两次请求之间至少有 _min_interval 秒的间隔"""
-        global _last_request_time
+        global _last_request_time, _api_lock
         while True:
-            with cls._api_lock:
+            with _api_lock:
                 # 再次检查，因为可能在我们等待锁的时候，其他线程已经更新了时间
                 now = time.time()
                 elapsed = now - _last_request_time
