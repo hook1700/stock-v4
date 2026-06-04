@@ -16,7 +16,7 @@ class DataService:
         self.fetcher = DataFetcher()
     
     def update_stock_list(self, db: Session):
-        """更新股票基础信息列表"""
+        """更新股票基础信息列表（包含申万二级行业）"""
         try:
             update_record = DataUpdate(
                 update_type='stock_info',
@@ -27,6 +27,19 @@ class DataService:
             db.add(update_record)
             db.commit()
             db.refresh(update_record)
+            
+            # 先获取申万二级行业分类（建立股票代码 -> 行业名称的映射）
+            logger.info('开始获取申万二级行业分类...')
+            industry_mapping = {}
+            try:
+                industry_df = self.fetcher.ak_client.get_industry_classification(use_sw_second=True)
+                if isinstance(industry_df, dict):
+                    industry_mapping = industry_df
+                    logger.info(f'申万二级行业分类获取成功，共 {len(industry_mapping)} 只股票')
+                else:
+                    logger.warning('申万二级行业分类返回格式异常，将跳过行业信息')
+            except Exception as e:
+                logger.warning(f'获取申万二级行业分类失败: {e}，将跳过行业信息')
             
             # 获取股票列表
             df = self.fetcher.get_stock_list()
@@ -52,14 +65,22 @@ class DataService:
                     
                     # 查询或创建
                     stock = db.query(Stock).filter(Stock.stock_code == code).first()
+                    
+                    # 获取申万二级行业
+                    industry_name = industry_mapping.get(code, '')
+                    
                     if stock:
                         stock.stock_name = name
                         stock.updated_at = datetime.now()
+                        # 更新行业信息（如果有）
+                        if industry_name:
+                            stock.industry = industry_name
                     else:
                         stock = Stock(
                             stock_code=code,
                             stock_name=name,
-                            market='SZ' if code.startswith('0') or code.startswith('3') else 'SH'
+                            market='SZ' if code.startswith('0') or code.startswith('3') else 'SH',
+                            industry=industry_name if industry_name else None
                         )
                         db.add(stock)
                     count += 1
