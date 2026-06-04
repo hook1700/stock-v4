@@ -18,6 +18,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 访问日志过滤器：过滤 /api/health 请求
+class HealthCheckFilter(logging.Filter):
+    """过滤 /api/health 的访问日志"""
+    def filter(self, record):
+        # 如果日志记录中包含 /api/health，则过滤掉
+        if hasattr(record, 'getMessage') and '/api/health' in record.getMessage():
+            return False
+        return True
+
+# 将过滤器添加到 uvicorn.access 日志处理器
+uvicorn_access = logging.getLogger('uvicorn.access')
+uvicorn_access.addFilter(HealthCheckFilter())
+
 # 创建数据库表（添加异常处理，避免因残留类型定义导致启动失败）
 try:
     Base.metadata.create_all(bind=engine, checkfirst=True)
