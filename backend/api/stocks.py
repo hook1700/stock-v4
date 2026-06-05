@@ -6,8 +6,12 @@ from datetime import date
 
 from models.database import get_db
 from models.stock import Stock, StockDaily
+from data_sources.data_fetcher import DataFetcher
 
 router = APIRouter(prefix='/stocks', tags=['股票'])
+
+# 创建数据获取器实例
+_fetcher = DataFetcher()
 
 @router.get('/')
 async def get_stocks(
@@ -97,3 +101,77 @@ async def get_stock_daily(
             for d in daily_data
         ]
     }
+
+
+@router.get('/industry/ths/summary')
+async def get_ths_industry_summary():
+    """获取同花顺行业板块概要数据
+    
+    返回同花顺行业板块的实时数据，包括：
+    - 板块名称
+    - 涨跌幅
+    - 总成交量/成交额
+    - 净流入
+    - 上涨/下跌家数
+    - 领涨股信息
+    """
+    try:
+        df = _fetcher.get_ths_industry_summary()
+        
+        if df.empty:
+            return {'success': False, 'error': '获取同花顺行业板块数据失败'}
+        
+        # 转换为字典列表
+        result = []
+        for _, row in df.iterrows():
+            result.append({
+                'serial': int(row.get('序号', 0)),
+                'industry_name': str(row.get('板块', '')),
+                'change_percent': float(row.get('涨跌幅', 0)) if row.get('涨跌幅') else 0.0,
+                'total_volume': float(row.get('总成交量', 0)) if row.get('总成交量') else 0.0,
+                'total_amount': float(row.get('总成交额', 0)) if row.get('总成交额') else 0.0,
+                'net_inflow': float(row.get('净流入', 0)) if row.get('净流入') else 0.0,
+                'up_count': int(row.get('上涨家数', 0)) if row.get('上涨家数') else 0,
+                'down_count': int(row.get('下跌家数', 0)) if row.get('下跌家数') else 0,
+                'avg_price': float(row.get('均价', 0)) if row.get('均价') else 0.0,
+                'leading_stock': str(row.get('领涨股', '')),
+                'leading_stock_price': float(row.get('领涨股-最新价', 0)) if row.get('领涨股-最新价') else 0.0,
+                'leading_stock_change': float(row.get('领涨股-涨跌幅', 0)) if row.get('领涨股-涨跌幅') else 0.0
+            })
+        
+        return {
+            'success': True,
+            'count': len(result),
+            'data': result
+        }
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+@router.get('/industry/ths/list')
+async def get_ths_industry_list():
+    """获取同花顺行业板块名称列表
+    
+    返回同花顺行业板块的名称和代码列表
+    """
+    try:
+        df = _fetcher.get_ths_industry_name_list()
+        
+        if df.empty:
+            return {'success': False, 'error': '获取同花顺行业板块列表失败'}
+        
+        # 转换为字典列表
+        result = []
+        for _, row in df.iterrows():
+            result.append({
+                'name': str(row.get('name', '')),
+                'code': str(row.get('code', ''))
+            })
+        
+        return {
+            'success': True,
+            'count': len(result),
+            'data': result
+        }
+    except Exception as e:
+        return {'success': False, 'error': str(e)}

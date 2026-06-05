@@ -51,21 +51,48 @@ class TaskScheduler:
             logger.info('任务调度器已停止')
     
     def _update_data_job(self):
-        """数据更新任务"""
+        """数据更新任务
+        
+        优化后的流程（适合每天23点运行）：
+        1. 使用历史数据接口获取股票列表（更稳定）
+        2. 获取行业分类信息并更新到股票表
+        3. 增量更新当日日线数据
+        """
         db = SessionLocal()
         try:
             logger.info('开始执行每日数据更新...')
             
-            # 更新股票列表（每周一或首次运行）
-            self.data_service.update_stock_list(db)
+            # 步骤1: 更新股票列表（使用历史数据接口，更适合非交易时段）
+            # 每周一或首次运行时更新股票列表和行业信息
+            from datetime import date as date_type
+            today = date_type.today()
+            should_update_stock_list = (today.weekday() == 0)  # 周一更新
             
-            # 更新日线数据
-            result = self.data_service.update_daily_data(db)
+            # 检查是否首次运行（数据库中没有股票数据）
+            from models.stock import Stock
+            stock_count = db.query(Stock).count()
+            if stock_count == 0:
+                should_update_stock_list = True
+                logger.info('检测到首次运行，将更新股票列表')
+            
+            if should_update_stock_list:
+                logger.info('开始更新股票列表和行业信息...')
+                result = self.data_service.update_stock_list(db, use_history_api=True)
+                if result['success']:
+                    logger.info(f'股票列表更新完成，共 {result.get("count", 0)} 只')
+                else:
+                    logger.error(f'股票列表更新失败: {result.get("error", "未知错误")}')
+            else:
+                logger.info('今天不是周一，跳过股票列表更新（每周一更新）')
+            
+            # 步骤2: 增量更新日线数据（只更新今天的数据）
+            logger.info('开始增量更新日线数据...')
+            result = self.data_service.update_daily_data(db, use_incremental=True)
             
             if result['success']:
-                logger.info(f'数据更新完成，共 {result.get("count", 0)} 条')
+                logger.info(f'日线数据更新完成，共 {result.get("count", 0)} 条')
             else:
-                logger.error(f'数据更新失败: {result.get("error", "未知错误")}')
+                logger.error(f'日线数据更新失败: {result.get("error", "未知错误")}')
                 
         except Exception as e:
             logger.error(f'数据更新任务异常: {e}')

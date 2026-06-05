@@ -15,8 +15,22 @@ class DataService:
     def __init__(self):
         self.fetcher = DataFetcher()
     
-    def update_stock_list(self, db: Session):
-        """更新股票基础信息列表（包含申万二级行业）"""
+    def update_stock_list(self, db: Session, use_history_api=True, trade_date=None):
+        """更新股票基础信息列表（包含申万二级行业）
+        
+        优化后的流程（use_history_api=True 时）：
+        1. 通过历史数据接口获取股票列表（更稳定，适合非交易时段）
+        2. 获取行业分类信息
+        3. 将行业信息更新到股票信息中
+        
+        Args:
+            db: 数据库会话
+            use_history_api: 是否使用历史数据接口获取股票列表，默认为 True
+            trade_date: 交易日期，格式 YYYYMMDD 或 YYYY-MM-DD，默认为昨天
+            
+        Returns:
+            dict: {'success': bool, 'count': int, 'error': str}
+        """
         try:
             update_record = DataUpdate(
                 update_type='stock_info',
@@ -28,21 +42,13 @@ class DataService:
             db.commit()
             db.refresh(update_record)
             
-            # 先获取申万二级行业分类（建立股票代码 -> 行业名称的映射）
-            logger.info('开始获取申万二级行业分类...')
-            industry_mapping = {}
-            try:
-                industry_df = self.fetcher.ak_client.get_industry_classification(use_sw_second=True)
-                if isinstance(industry_df, dict):
-                    industry_mapping = industry_df
-                    logger.info(f'申万二级行业分类获取成功，共 {len(industry_mapping)} 只股票')
-                else:
-                    logger.warning('申万二级行业分类返回格式异常，将跳过行业信息')
-            except Exception as e:
-                logger.warning(f'获取申万二级行业分类失败: {e}，将跳过行业信息')
+            # 步骤1: 获取股票列表
+            logger.info(f'开始获取股票列表 (use_history_api={use_history_api})...')
+            if use_history_api:
+                df = self.fetcher.get_stock_list_from_history(trade_date=trade_date)
+            else:
+                df = self.fetcher.get_stock_list()
             
-            # 获取股票列表
-            df = self.fetcher.get_stock_list()
             if df.empty:
                 update_record.status = 'failed'
                 update_record.error_message = '获取股票列表失败'
@@ -50,6 +56,21 @@ class DataService:
                 db.commit()
                 return {'success': False, 'error': '获取股票列表失败'}
             
+            logger.info(f'获取股票列表成功，共 {len(df)} 只')
+            
+            # 步骤2: 获取申万二级行业分类（建立股票代码 -> 行业名称的映射）
+            logger.info('开始获取申万二级行业分类...')
+            industry_mapping = {}
+            try:
+                industry_mapping = self.fetcher.get_industry_mapping()
+                if industry_mapping:
+                    logger.info(f'申万二级行业分类获取成功，共 {len(industry_mapping)} 只股票')
+                else:
+                    logger.warning('申万二级行业分类获取失败或为空，将跳过行业信息')
+            except Exception as e:
+                logger.warning(f'获取申万二级行业分类失败: {e}，将跳过行业信息')
+            
+            # 步骤3: 遍历股票列表，更新数据库
             count = 0
             for _, row in df.iterrows():
                 try:
@@ -113,8 +134,21 @@ class DataService:
         finally:
             self.fetcher.cleanup()
     
-    def update_daily_data(self, db: Session, target_date: date = None):
-        """更新日线数据"""
+    def update_daily_data(self, db: Session, target_date: date = None, use_incremental=True):
+        """更新日线数据
+        
+        优化后的逻辑：
+        - use_incremental=True: 只更新 target_date 这一天的数据（增量更新）
+        - use_incremental=False: 遍历所有股票，更新到 target_date 为止的数据
+        
+        Args:
+            db: 数据库会话
+            target_date: 目标日期，默认为今天
+            use_incremental: 是否使用增量更新模式，默认为 True
+            
+        Returns:
+            dict: {'success': bool, 'count': int, 'error': str}
+        """
         if target_date is None:
             target_date = date.today()
         
@@ -129,74 +163,147 @@ class DataService:
             db.commit()
             db.refresh(update_record)
             
-            # 获取A股行情
-            df = self.fetcher.get_all_stocks_daily(target_date)
-            if df.empty:
-                update_record.status = 'failed'
-                update_record.error_message = '获取行情数据失败'
-                update_record.completed_at = datetime.now()
-                db.commit()
-                return {'success': False, 'error': '获取行情数据失败'}
-            
             count = 0
-            for _, row in df.iterrows():
-                try:
-                    code = str(row.get('代码', '')).replace('.', '')
-                    if not code:
-                        continue
-                    
-                    # 检查股票是否在列表中
-                    stock = db.query(Stock).filter(Stock.stock_code == code).first()
-                    if not stock:
-                        continue
-                    
-                    # 解析价格
-                    close_price = self._parse_price(row.get('最新价', 0))
-                    open_price = self._parse_price(row.get('今开', 0))
-                    high_price = self._parse_price(row.get('最高', 0))
-                    low_price = self._parse_price(row.get('最低', 0))
-                    volume = self._parse_volume(row.get('成交量', 0))
-                    turnover = self._parse_price(row.get('成交额', 0))
-                    pe = self._parse_price(row.get('市盈率', 0))
-                    pb = self._parse_price(row.get('市净率', 0))
-                    
-                    # 检查是否已存在
-                    existing = db.query(StockDaily).filter(
-                        StockDaily.stock_code == code,
-                        StockDaily.trade_date == target_date
-                    ).first()
-                    
-                    if existing:
-                        existing.open_price = open_price
-                        existing.close_price = close_price
-                        existing.high_price = high_price
-                        existing.low_price = low_price
-                        existing.volume = volume
-                        existing.turnover = turnover
-                        existing.pe_ratio = pe
-                        existing.pb_ratio = pb
-                    else:
-                        daily = StockDaily(
-                            stock_code=code,
-                            trade_date=target_date,
-                            open_price=open_price,
-                            close_price=close_price,
-                            high_price=high_price,
-                            low_price=low_price,
-                            volume=volume,
-                            turnover=turnover,
-                            pe_ratio=pe,
-                            pb_ratio=pb
-                        )
-                        db.add(daily)
-                    
-                    count += 1
-                    if count % 100 == 0:
-                        db.commit()
+            
+            if use_incremental:
+                # 增量更新模式：只更新 target_date 这一天的数据
+                logger.info(f'开始增量更新日线数据 (target_date={target_date})...')
+                
+                # 获取所有股票列表
+                stocks = db.query(Stock).all()
+                logger.info(f'数据库中共有 {len(stocks)} 只股票')
+                
+                for stock in stocks:
+                    try:
+                        # 检查是否已存在该日期的数据
+                        existing = db.query(StockDaily).filter(
+                            StockDaily.stock_code == stock.stock_code,
+                            StockDaily.trade_date == target_date
+                        ).first()
                         
-                except Exception as e:
-                    logger.warning(f'处理{code}日线数据出错: {e}')
-                    continue
+                        if existing:
+                            # 已存在，跳过
+                            continue
+                        
+                        # 获取该股票的历史数据（只获取 target_date 这一天）
+                        target_date_str = target_date.strftime('%Y%m%d')
+                        df = self.fetcher.get_daily_data(
+                            stock.stock_code,
+                            start_date=target_date_str,
+                            end_date=target_date_str
+                        )
+                        
+                        if df.empty:
+                            continue
+                        
+                        # 解析数据
+                        for _, row in df.iterrows():
+                            trade_date = row.get('date', '')
+                            if isinstance(trade_date, str):
+                                try:
+                                    trade_date = datetime.strptime(trade_date, '%Y-%m-%d').date()
+                                except ValueError:
+                                    continue
+                            
+                            if trade_date != target_date:
+                                continue
+                            
+                            close_price = self._parse_price(row.get('close', 0))
+                            if close_price <= 0:
+                                continue
+                            
+                            daily = StockDaily(
+                                stock_code=stock.stock_code,
+                                trade_date=trade_date,
+                                open_price=self._parse_price(row.get('open', 0)),
+                                close_price=close_price,
+                                high_price=self._parse_price(row.get('high', 0)),
+                                low_price=self._parse_price(row.get('low', 0)),
+                                volume=self._parse_volume(row.get('volume', 0)),
+                                turnover=self._parse_price(row.get('amount', 0)),
+                                pe_ratio=None,
+                                pb_ratio=None
+                            )
+                            db.add(daily)
+                            count += 1
+                            break
+                        
+                        if count % 100 == 0:
+                            db.commit()
+                            
+                    except Exception as e:
+                        logger.warning(f'处理{stock.stock_code}日线数据出错: {e}')
+                        continue
+            else:
+                # 全量更新模式：使用原来的逻辑
+                logger.info(f'开始全量更新日线数据 (target_date={target_date})...')
+                
+                df = self.fetcher.get_all_stocks_daily(target_date)
+                if df.empty:
+                    update_record.status = 'failed'
+                    update_record.error_message = '获取行情数据失败'
+                    update_record.completed_at = datetime.now()
+                    db.commit()
+                    return {'success': False, 'error': '获取行情数据失败'}
+                
+                for _, row in df.iterrows():
+                    try:
+                        code = str(row.get('代码', '')).replace('.', '')
+                        if not code:
+                            continue
+                        
+                        # 检查股票是否在列表中
+                        stock = db.query(Stock).filter(Stock.stock_code == code).first()
+                        if not stock:
+                            continue
+                        
+                        # 解析价格
+                        close_price = self._parse_price(row.get('最新价', 0))
+                        open_price = self._parse_price(row.get('今开', 0))
+                        high_price = self._parse_price(row.get('最高', 0))
+                        low_price = self._parse_price(row.get('最低', 0))
+                        volume = self._parse_volume(row.get('成交量', 0))
+                        turnover = self._parse_price(row.get('成交额', 0))
+                        pe = self._parse_price(row.get('市盈率', 0))
+                        pb = self._parse_price(row.get('市净率', 0))
+                        
+                        # 检查是否已存在
+                        existing = db.query(StockDaily).filter(
+                            StockDaily.stock_code == code,
+                            StockDaily.trade_date == target_date
+                        ).first()
+                        
+                        if existing:
+                            existing.open_price = open_price
+                            existing.close_price = close_price
+                            existing.high_price = high_price
+                            existing.low_price = low_price
+                            existing.volume = volume
+                            existing.turnover = turnover
+                            existing.pe_ratio = pe
+                            existing.pb_ratio = pb
+                        else:
+                            daily = StockDaily(
+                                stock_code=code,
+                                trade_date=target_date,
+                                open_price=open_price,
+                                close_price=close_price,
+                                high_price=high_price,
+                                low_price=low_price,
+                                volume=volume,
+                                turnover=turnover,
+                                pe_ratio=pe,
+                                pb_ratio=pb
+                            )
+                            db.add(daily)
+                        
+                        count += 1
+                        if count % 100 == 0:
+                            db.commit()
+                            
+                    except Exception as e:
+                        logger.warning(f'处理{code}日线数据出错: {e}')
+                        continue
             
             db.commit()
             
