@@ -4,19 +4,25 @@
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <span style="font-size: 18px; font-weight: bold;">股票池</span>
-          <el-input
-            v-model="searchQuery"
-            placeholder="搜索股票代码或名称"
-            style="width: 280px;"
-            clearable
-            @keyup.enter="handleSearch"
-          >
-            <template #append>
-              <el-button @click="handleSearch">
-                <el-icon><Search /></el-icon>
-              </el-button>
-            </template>
-          </el-input>
+          <div style="display: flex; gap: 10px;">
+            <el-button type="success" @click="handleFetchStockList" :loading="fetchLoading">
+              <el-icon><Download /></el-icon>
+              拉取股票数据
+            </el-button>
+            <el-input
+              v-model="searchQuery"
+              placeholder="搜索股票代码或名称"
+              style="width: 280px;"
+              clearable
+              @keyup.enter="handleSearch"
+            >
+              <template #append>
+                <el-button @click="handleSearch">
+                  <el-icon><Search /></el-icon>
+                </el-button>
+              </template>
+            </el-input>
+          </div>
         </div>
       </template>
       
@@ -54,6 +60,12 @@
     
     <!-- 股票详情弹窗 -->
     <el-dialog v-model="detailVisible" :title="selectedStock?.stock_name + ' (' + selectedStock?.stock_code + ')'" width="800px">
+      <div style="margin-bottom: 10px; display: flex; justify-content: flex-end;">
+        <el-button type="primary" @click="handleFetchDaily" :loading="fetchDailyLoading" size="small">
+          <el-icon><Download /></el-icon>
+          拉取最新日线数据
+        </el-button>
+      </div>
       <el-table :data="dailyData" v-loading="detailLoading" max-height="400">
         <el-table-column prop="trade_date" label="日期" width="120" />
         <el-table-column prop="close_price" label="收盘价" width="100" :formatter="priceFormatter" />
@@ -69,7 +81,9 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getStocks, getStockDaily } from '../api/stock.js'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, Download } from '@element-plus/icons-vue'
+import { getStocks, getStockDaily, fetchStockList, fetchStockDaily } from '../api/stock.js'
 
 const stocks = ref([])
 const total = ref(0)
@@ -82,6 +96,9 @@ const detailVisible = ref(false)
 const detailLoading = ref(false)
 const selectedStock = ref(null)
 const dailyData = ref([])
+
+const fetchLoading = ref(false)
+const fetchDailyLoading = ref(false)
 
 const loadStocks = async () => {
   loading.value = true
@@ -125,6 +142,73 @@ const viewDetail = async (stock) => {
     console.error('获取日线数据失败:', e)
   }
   detailLoading.value = false
+}
+
+const handleFetchStockList = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要从数据源拉取最新股票列表数据吗？这将会更新数据库中的股票信息。',
+      '确认拉取',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'info',
+      }
+    )
+    
+    fetchLoading.value = true
+    const res = await fetchStockList({ use_history_api: true })
+    
+    if (res.success) {
+      ElMessage.success(`拉取成功！共更新 ${res.count || 0} 只股票`)
+      // 刷新列表
+      loadStocks()
+    } else {
+      ElMessage.error(`拉取失败: ${res.error || '未知错误'}`)
+    }
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('拉取股票列表失败:', e)
+      ElMessage.error(`拉取失败: ${e.message || e}`)
+    }
+  } finally {
+    fetchLoading.value = false
+  }
+}
+
+const handleFetchDaily = async () => {
+  if (!selectedStock.value) return
+  
+  try {
+    await ElMessageBox.confirm(
+      `确定要拉取 ${selectedStock.value.stock_name} (${selectedStock.value.stock_code}) 的最新日线数据吗？`,
+      '确认拉取',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'info',
+      }
+    )
+    
+    fetchDailyLoading.value = true
+    const res = await fetchStockDaily(selectedStock.value.stock_code, { days: 365 })
+    
+    if (res.success) {
+      ElMessage.success(`拉取成功！共更新 ${res.count || 0} 条日线数据`)
+      // 刷新日线数据
+      const dailyRes = await getStockDaily(selectedStock.value.stock_code)
+      dailyData.value = dailyRes.data || []
+    } else {
+      ElMessage.error(`拉取失败: ${res.error || '未知错误'}`)
+    }
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('拉取日线数据失败:', e)
+      ElMessage.error(`拉取失败: ${e.message || e}`)
+    }
+  } finally {
+    fetchDailyLoading.value = false
+  }
 }
 
 const priceFormatter = (row, col, val) => {

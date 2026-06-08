@@ -175,3 +175,69 @@ async def get_ths_industry_list():
         }
     except Exception as e:
         return {'success': False, 'error': str(e)}
+
+
+@router.post('/fetch-stock-list')
+async def fetch_stock_list(
+    use_history_api: bool = True,
+    db: Session = Depends(get_db)
+):
+    """主动拉取股票列表数据
+    
+    从数据源获取最新股票列表并保存到数据库
+    
+    Args:
+        use_history_api: 是否使用历史数据接口（更稳定，适合非交易时段）
+    """
+    from services.data_service import DataService
+    data_service = DataService()
+    
+    try:
+        result = data_service.update_stock_list(db, use_history_api=use_history_api)
+        return result
+    except Exception as e:
+        logger.error(f'主动拉取股票列表失败: {e}')
+        return {'success': False, 'error': str(e)}
+
+
+@router.post('/{stock_code}/fetch-daily')
+async def fetch_stock_daily(
+    stock_code: str,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    days: int = 365,
+    db: Session = Depends(get_db)
+):
+    """主动拉取指定股票的日线数据
+    
+    从数据源获取指定股票的日线数据并保存到数据库
+    
+    Args:
+        stock_code: 股票代码
+        start_date: 开始日期（可选，默认end_date前365天）
+        end_date: 结束日期（可选，默认为今天）
+        days: 如果未指定start_date，则拉取最近days天的数据
+    """
+    from services.data_service import DataService
+    from datetime import datetime, timedelta
+    data_service = DataService()
+    
+    try:
+        # 确定日期范围
+        if end_date is None:
+            end_date = date.today()
+        
+        if start_date is None:
+            start_date = end_date - timedelta(days=days)
+        
+        # 调用数据服务获取历史数据
+        result = data_service.update_historical_data(
+            db, 
+            stock_code=stock_code,
+            days=days
+        )
+        
+        return result
+    except Exception as e:
+        logger.error(f'主动拉取股票{stock_code}日线数据失败: {e}')
+        return {'success': False, 'error': str(e)}
