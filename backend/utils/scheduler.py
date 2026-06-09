@@ -21,19 +21,19 @@ class TaskScheduler:
         if self._running:
             return
         
-        # 每日23:00 更新数据
+        # 每日17:45 更新数据
         self.scheduler.add_job(
             self._update_data_job,
-            CronTrigger(hour=23, minute=0),
+            CronTrigger(hour=17, minute=45),
             id='daily_data_update',
             name='每日数据更新',
             replace_existing=True
         )
         
-        # 每日06:00 执行策略
+        # 每日17:50 执行策略
         self.scheduler.add_job(
             self._execute_strategies_job,
-            CronTrigger(hour=6, minute=0),
+            CronTrigger(hour=17, minute=50),
             id='daily_strategy_execute',
             name='每日策略执行',
             replace_existing=True
