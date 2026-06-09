@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # 数据库配置
-        DATABASE_URL: str = os.getenv('DATABASE_URL', 'postgresql://stock_user:stock_pass@localhost:5432/stock_analysis')
+    DATABASE_URL: str = os.getenv('DATABASE_URL', 'postgresql://stock_user:stock_pass@localhost:5432/stock_analysis')
     
     # 数据源配置
     BAOSTOCK_USER: str = os.getenv('BAOSTOCK_USER', '')
