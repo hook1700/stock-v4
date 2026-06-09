@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 
-from models.database import engine, Base
+from models.database import engine, Base, SessionLocal
+from models.strategy import Strategy as StrategyModel
 from api import stocks, strategies, system, daily_record
 from config import settings
 from utils.scheduler import TaskScheduler
@@ -45,6 +46,41 @@ scheduler = TaskScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info('应用启动...')
+    
+    # 初始化策略数据到数据库
+    try:
+        from services.strategy_service import StrategyService
+        db = SessionLocal()
+        strategy_service = StrategyService()
+        
+        # 获取所有策略信息
+        all_strategies = strategy_service.get_all_strategies()
+        
+        for s in all_strategies:
+            # 检查策略是否已存在
+            existing = db.query(StrategyModel).filter(StrategyModel.id == s['id']).first()
+            if not existing:
+                # 创建新策略记录
+                new_strategy = StrategyModel(
+                    id=s['id'],
+                    name=s['name'],
+                    type=s['type'],
+                    description=s['description'],
+                    parameters=s['parameters'],
+                    is_active=True
+                )
+                db.add(new_strategy)
+                logger.info(f'添加策略到数据库: {s["name"]} (id={s["id"]})')
+        
+        db.commit()
+        db.close()
+        logger.info('策略数据初始化完成')
+    except Exception as e:
+        logger.warning(f'策略数据初始化失败（可能已存在）: {e}')
+        if 'db' in locals():
+            db.rollback()
+            db.close()
+    
     # 启动定时任务调度器
     try:
         scheduler.start()
