@@ -103,6 +103,7 @@ class StrategyService:
                         result = StrategyResult(
                             strategy_id=strategy_index,
                             stock_code=stock.stock_code,
+                            stock_name=stock.stock_name,
                             trade_date=trade_date,
                             signal_type=signal.signal_type,
                             buy_price=signal.buy_price,
@@ -195,6 +196,7 @@ class StrategyService:
                     'strategy_id': r.strategy_id,
                     'strategy_name': self.strategies[r.strategy_id-1].name if r.strategy_id <= 9 else None,
                     'stock_code': r.stock_code,
+                    'stock_name': r.stock_name,
                     'trade_date': r.trade_date.isoformat() if r.trade_date else None,
                     'signal_type': r.signal_type,
                     'buy_price': float(r.buy_price) if r.buy_price else None,

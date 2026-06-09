@@ -2,10 +2,14 @@
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
+import json
+from decimal import Decimal
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
+from starlette.responses import JSONResponse
+from starlette.requests import Request
 
 from models.database import engine, Base, SessionLocal
 from models.strategy import Strategy as StrategyModel
@@ -42,6 +46,59 @@ except Exception as e:
 
 # 全局调度器实例
 scheduler = TaskScheduler()
+
+# 自定义 JSON 编码器，处理 NaN、Infinity 等值
+class SafeJSONEncoder(json.JSONEncoder):
+    """安全的 JSON 编码器，处理 NaN、Infinity 等无法被 JSON 序列化的特殊值"""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
+    
+    def encode(self, obj):
+        return json.dumps(obj, allow_nan=False, default=self.default)
+
+    def iterencode(self, obj, _one_shot=False):
+        # 将 NaN、Infinity 等转换为 None
+        def convert_special_floats(o):
+            if isinstance(o, float):
+                if json.JSONEncoder().encode(o) == 'NaN' or o != o:  # NaN 检测
+                    return None
+                if o == float('inf'):
+                    return None
+                if o == float('-inf'):
+                    return None
+            elif isinstance(o, dict):
+                return {k: convert_special_floats(v) for k, v in o.items()}
+            elif isinstance(o, list):
+                return [convert_special_floats(item) for item in o]
+            return o
+        
+        converted = convert_special_floats(obj)
+        return json.JSONEncoder().iterencode(converted, _one_shot)
+
+def safe_json_dumps(obj, **kwargs):
+    """安全的 json.dumps，将 NaN/Infinity 转换为 null"""
+    def convert_nan_inf(o):
+        if isinstance(o, float):
+            if o != o:  # NaN 检测 (NaN != NaN)
+                return None
+            if o == float('inf') or o == float('-inf'):
+                return None
+        elif isinstance(o, dict):
+            return {k: convert_nan_inf(v) for k, v in o.items()}
+        elif isinstance(o, list):
+            return [convert_nan_inf(item) for item in o]
+        return o
+    
+    # 递归转换对象中的 NaN/Infinity
+    converted = convert_nan_inf(obj)
+    return json.dumps(converted, **kwargs)
+
+class SafeJSONResponse(JSONResponse):
+    """安全的 JSON 响应类，处理 NaN、Infinity 等特殊浮点值"""
+    def render(self, content) -> bytes:
+        return safe_json_dumps(content, ensure_ascii=False, default=str).encode('utf-8')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -100,7 +157,8 @@ app = FastAPI(
     title='股票智能分析系统',
     description='基于多策略的股票筛选分析系统',
     version='1.0.0',
-    lifespan=lifespan
+    lifespan=lifespan,
+    default_response_class=SafeJSONResponse  # 使用安全的 JSON 响应类
 )
 
 # CORS

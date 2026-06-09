@@ -19,6 +19,7 @@ class StrategyResult(Base):
     id = Column(Integer, primary_key=True, index=True)
     strategy_id = Column(Integer, ForeignKey('strategies.id'))
     stock_code = Column(String(20), nullable=False)
+    stock_name = Column(String(100))  # 新增：股票中文名
     trade_date = Column(Date, nullable=False)
     signal_type = Column(String(20))  # buy/sell/hold
     buy_price = Column(DECIMAL(10, 4))
