@@ -137,6 +137,18 @@ class StockDataSync:
                 df = self._fetch_stock_list_direct()
             else:
                 logger.info(f'成功获取 {len(df)} 只股票')
+                
+                # 重命名列以匹配我们的格式（get_stock_list 返回的是 code 和 code_name）
+                if 'code_name' in df.columns:
+                    df = df.rename(columns={
+                        'code_name': 'name'
+                    })
+                
+                # 确保 code 列为字符串且填充为6位（去掉 sh./sz. 前缀）
+                if 'code' in df.columns:
+                    df['code'] = df['code'].apply(
+                        lambda x: str(x).replace('sh.', '').replace('sz.', '').zfill(6)
+                    )
             
             return df
             

@@ -27,7 +27,7 @@ if [ -z "$TENCENT_CLOUD_IP" ]; then
     exit 1
 fi
 
-# 步骤1: 本地构建 Docker 镜像
+# 步骤1: 本地构建镜像并推送到腾讯云镜像仓库（可选）
 echo ""
 echo "📦 步骤 1: 构建 Docker 镜像..."
 docker compose -f docker-compose.yml build
@@ -36,10 +36,8 @@ docker compose -f docker-compose.yml build
 echo ""
 echo "📤 步骤 2: 上传项目文件到服务器..."
 
-# 创建临时部署包（包含实际 .env 或 .env.example）
+# 创建临时部署包
 DEPLOY_FILE="deploy_${TIMESTAMP}.tar.gz"
-ENV_FILE=".env"
-[ ! -f ".env" ] && ENV_FILE=".env.example"
 tar -czf "/tmp/${DEPLOY_FILE}" \
     --exclude='.git' \
     --exclude='node_modules' \
@@ -47,11 +45,11 @@ tar -czf "/tmp/${DEPLOY_FILE}" \
     --exclude='*.pyc' \
     --exclude='frontend/dist' \
     --exclude='backend/*.db' \
-    --exclude='deploy' \
     docker-compose.yml \
-    "${ENV_FILE}" \
+    .env.example \
     backend/ \
-    frontend/
+    frontend/ \
+    deploy/
 
 # SSH 连接并上传
 ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "root@${SERVER_HOST}" "mkdir -p ${REMOTE_DIR}"
