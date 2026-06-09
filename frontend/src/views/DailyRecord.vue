@@ -209,6 +209,7 @@
           </template>
           <el-table v-if="detailData.signals && detailData.signals.length > 0" :data="detailData.signals" max-height="300" size="small">
             <el-table-column prop="stock_code" label="股票代码" width="100" />
+            <el-table-column prop="stock_name" label="股票名称" width="120" />
             <el-table-column prop="strategy_name" label="策略" width="160" />
             <el-table-column prop="signal_type" label="信号" width="70" align="center">
               <template #default="scope">
