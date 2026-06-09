@@ -63,32 +63,41 @@ class DataFetcher:
         try:
             df = self.ak_client.get_stock_list_from_history(trade_date=trade_date)
             if not df.empty and len(df) > 0:
-                logger.info(f'AKShare 历史数据接口获取股票列表成功，共 {len(df)} 只')
+                logger.info(f'AKShare 获取股票列表成功，共 {len(df)} 只')
                 return df
             else:
-                logger.warning('AKShare 历史数据接口返回的股票列表为空，尝试备用方案')
+                logger.warning('AKShare 返回的股票列表为空，尝试 BaoStock 备用方案')
         except Exception as e:
-            logger.warning(f'AKShare 历史数据接口获取股票列表失败，尝试备用方案: {e}')
+            logger.warning(f'AKShare 获取股票列表失败，尝试 BaoStock 备用方案: {e}')
         
-        # 如果指定了交易日期，使用 BaoStock 获取该日期的数据
-        if trade_date is not None:
-            try:
-                # 格式化日期
-                if '-' in str(trade_date):
-                    formatted_date = trade_date.replace('-', '')
-                else:
-                    formatted_date = str(trade_date)
+        # 使用 BaoStock 作为备用方案
+        logger.info('开始使用 BaoStock 获取股票列表...')
+        try:
+            # 确保 BaoStock 已登录
+            if not self.bs_client.is_logged_in:
+                if not self.bs_client.login():
+                    logger.error('BaoStock 登录失败，无法获取股票列表')
+                    return pd.DataFrame()
+            
+            # 获取股票列表
+            df = self.bs_client.get_stock_list()
+            
+            if not df.empty and len(df) > 0:
+                # 重命名列以匹配我们的格式
+                df = df.rename(columns={
+                    'code': 'code',
+                    'code_name': 'name'
+                })
                 
-                # 获取沪深两市数据
-                df_sh = self.bs_client.get_daily_data('sh', formatted_date, formatted_date)
-                df_sz = self.bs_client.get_daily_data('sz', formatted_date, formatted_date)
-                df = pd.concat([df_sh, df_sz], ignore_index=True)
+                # 确保 code 列为字符串且填充为6位
+                df['code'] = df['code'].astype(str).str.zfill(6)
                 
-                if not df.empty and len(df) > 0:
-                    logger.info(f'BaoStock 获取股票列表成功，共 {len(df)} 只')
-                    return df
-            except Exception as e:
-                logger.warning(f'BaoStock 获取股票列表失败: {e}')
+                logger.info(f'BaoStock 获取股票列表成功，共 {len(df)} 只')
+                return df
+            else:
+                logger.warning('BaoStock 返回的股票列表为空')
+        except Exception as e:
+            logger.error(f'BaoStock 获取股票列表失败: {e}')
         
         logger.error('所有数据源均无法获取股票列表')
         return pd.DataFrame()

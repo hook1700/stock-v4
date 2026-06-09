@@ -5,9 +5,13 @@ import logging
 import time
 import random
 import threading
+import signal
 from functools import wraps
 
 logger = logging.getLogger(__name__)
+
+# 请求超时设置（秒）
+REQUEST_TIMEOUT = 30  # 单个请求超时时间
 
 # 全局锁，确保 AKShare 所有操作串行执行（同一时间只有一个请求）
 _api_lock = threading.Lock()
@@ -160,13 +164,12 @@ class AKShareClient:
             logger.error(f'获取A股列表失败: {e}')
             raise  # 让重试装饰器处理
     
-    @retry_on_failure(max_retries=3)
+    @retry_on_failure(max_retries=3, base_delay=10)  # 增加基础延迟到10秒
     def get_stock_list_from_history(self, trade_date=None):
         """通过历史数据接口获取A股列表（推荐非交易时段使用）
         
-        此方法通过调用 stock_zh_a_hist 接口获取全市场股票的历史数据，
-        从而构建股票列表。相比 get_a_stock_list() 使用的实时行情接口，
-        此方法更稳定，限流更宽松，适合每天23点等定时任务使用。
+        此方法通过调用 stock_zh_a_spot_em 接口获取全市场股票数据，
+        相比 stock_zh_a_hist 接口更稳定，适合每天23点等定时任务使用。
         
         Args:
             trade_date: 交易日期，格式 YYYYMMDD 或 YYYY-MM-DD，默认为昨天
@@ -176,6 +179,64 @@ class AKShareClient:
         """
         self._wait_if_needed()
         try:
+            # 方案1: 使用实时行情接口（更稳定）
+            # stock_zh_a_spot_em 接口相对稳定，限流较宽松
+            logger.info('开始通过 stock_zh_a_spot_em 接口获取股票列表...')
+            
+            # 设置超时保护
+            import socket
+            original_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(REQUEST_TIMEOUT)
+            
+            try:
+                df = ak.stock_zh_a_spot_em()
+            finally:
+                socket.setdefaulttimeout(original_timeout)
+            
+            if df.empty:
+                logger.warning('stock_zh_a_spot_em 接口返回为空，尝试备用方案')
+                # 方案2: 使用历史数据接口（作为备用）
+                df = self._get_stock_list_from_history_backup(trade_date)
+            
+            if df.empty:
+                logger.warning('所有方案均未获取到数据')
+                return pd.DataFrame()
+            
+            # 重命名列以匹配我们的格式
+            df = df.rename(columns={
+                '代码': 'code',
+                '名称': 'name',
+                '最新价': 'latest_price',
+                '涨跌幅': 'change_percent',
+                '成交额': 'turnover',
+                '市盈率-动态': 'pe',
+                '市净率': 'pb'
+            })
+            
+            # 确保 code 列为字符串且填充为6位
+            df['code'] = df['code'].astype(str).str.zfill(6)
+            
+            logger.info(f'获取股票列表成功，共 {len(df)} 只')
+            self._random_sleep(min_sleep=2.0, max_sleep=4.0)
+            return df
+            
+        except Exception as e:
+            logger.error(f'获取股票列表失败: {e}')
+            raise  # 让重试装饰器处理
+    
+    def _get_stock_list_from_history_backup(self, trade_date=None):
+        """备用方案：通过历史数据接口获取股票列表
+        
+        此方法作为 stock_zh_a_spot_em 接口的备用方案，
+        通过调用 stock_zh_a_hist 接口获取指定日期的数据。
+        
+        Args:
+            trade_date: 交易日期，格式 YYYYMMDD 或 YYYY-MM-DD，默认为昨天
+            
+        Returns:
+            DataFrame with columns: code, name, ... (包含基本股票信息)
+        """
+        try:
             # 如果没有指定日期，默认使用昨天
             if trade_date is None:
                 yesterday = datetime.now() - timedelta(days=1)
@@ -184,24 +245,34 @@ class AKShareClient:
                 # 统一日期格式为 YYYYMMDD
                 trade_date = trade_date.replace('-', '') if '-' in str(trade_date) else str(trade_date)
             
-            # 获取沪深两市所有股票的历史数据（指定日期）
-            # 使用 adjust='' 不复权，获取原始数据
-            df_sh = ak.stock_zh_a_hist(
-                symbol='sh',
-                period='daily',
-                start_date=trade_date,
-                end_date=trade_date,
-                adjust=''
-            )
-            self._random_sleep(min_sleep=1.5, max_sleep=3.0)
+            logger.info(f'开始通过 stock_zh_a_hist 接口获取历史数据 (trade_date={trade_date})...')
             
-            df_sz = ak.stock_zh_a_hist(
-                symbol='sz',
-                period='daily',
-                start_date=trade_date,
-                end_date=trade_date,
-                adjust=''
-            )
+            # 设置超时保护
+            import socket
+            original_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(REQUEST_TIMEOUT)
+            
+            try:
+                # 获取沪深两市所有股票的历史数据（指定日期）
+                # 使用 adjust='' 不复权，获取原始数据
+                df_sh = ak.stock_zh_a_hist(
+                    symbol='sh',
+                    period='daily',
+                    start_date=trade_date,
+                    end_date=trade_date,
+                    adjust=''
+                )
+                self._random_sleep(min_sleep=1.5, max_sleep=3.0)
+                
+                df_sz = ak.stock_zh_a_hist(
+                    symbol='sz',
+                    period='daily',
+                    start_date=trade_date,
+                    end_date=trade_date,
+                    adjust=''
+                )
+            finally:
+                socket.setdefaulttimeout(original_timeout)
             
             # 合并数据
             df = pd.concat([df_sh, df_sz], ignore_index=True)
@@ -227,12 +298,11 @@ class AKShareClient:
             })
             
             logger.info(f'通过历史数据接口获取股票列表成功，共 {len(df)} 只 (trade_date={trade_date})')
-            self._random_sleep(min_sleep=1.5, max_sleep=3.0)
             return df
             
         except Exception as e:
-            logger.error(f'通过历史数据接口获取股票列表失败: {e}')
-            raise  # 让重试装饰器处理
+            logger.error(f'备用方案获取股票列表失败: {e}')
+            return pd.DataFrame()
     
     @retry_on_failure(max_retries=3)
     def get_stock_history(self, stock_code, period='daily', start_date=None, end_date=None):
