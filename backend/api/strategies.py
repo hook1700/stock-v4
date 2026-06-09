@@ -2,9 +2,15 @@
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import date
+from pydantic import BaseModel
 
 from models.database import get_db
 from services.strategy_service import StrategyService
+
+# 添加请求模型
+class ExecuteStrategyRequest(BaseModel):
+    strategy_ids: Optional[List[int]] = None
+    trade_date: Optional[date] = None
 
 router = APIRouter(prefix='/strategies', tags=['策略'])
 strategy_service = StrategyService()
@@ -16,12 +22,14 @@ async def get_strategies():
 
 @router.post('/execute')
 async def execute_strategies(
-    strategy_ids: Optional[List[int]] = None,
-    trade_date: Optional[date] = None,
+    request: ExecuteStrategyRequest,
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db)
 ):
     """执行策略"""
+    strategy_ids = request.strategy_ids
+    trade_date = request.trade_date
+    
     if not strategy_ids:
         results = strategy_service.run_all_strategies(db, trade_date)
     else:
