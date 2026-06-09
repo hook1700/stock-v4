@@ -45,6 +45,60 @@ class DataFetcher:
         logger.error('所有数据源均无法获取股票列表')
         return pd.DataFrame()
     
+    def get_stock_info_a_code_name(self):
+        """获取全A股（沪深京）股票代码和名称（仅股票信息，无交易信息）
+        
+        优先使用 BaoStock（稳定），AKShare 作为备用。
+        
+        Returns:
+            DataFrame: 包含 code, name 列的 DataFrame
+        """
+        logger.info('开始获取A股股票列表（仅代码和名称）...')
+        
+        # 优先使用 BaoStock（稳定）
+        try:
+            # 确保 BaoStock 已登录
+            if not self.bs_client.is_logged_in:
+                if not self.bs_client.login():
+                    logger.error('BaoStock 登录失败，尝试 AKShare 备用方案')
+                else:
+                    # 获取股票列表
+                    df = self.bs_client.get_stock_list()
+                    
+                    if not df.empty and len(df) > 0:
+                        # 重命名列以匹配我们的格式
+                        df = df.rename(columns={
+                            'code': 'code',
+                            'code_name': 'name'
+                        })
+                        
+                        # 确保 code 列为字符串且填充为6位（去掉 sh./sz. 前缀）
+                        df['code'] = df['code'].apply(
+                            lambda x: str(x).replace('sh.', '').replace('sz.', '').zfill(6)
+                        )
+                        
+                        logger.info(f'BaoStock 获取A股股票列表成功，共 {len(df)} 只')
+                        return df
+                    else:
+                        logger.warning('BaoStock 返回的A股股票列表为空，尝试 AKShare 备用方案')
+        except Exception as e:
+            logger.warning(f'BaoStock 获取A股股票列表失败，尝试 AKShare 备用方案: {e}')
+        
+        # 使用 AKShare 作为备用方案
+        logger.info('开始使用 AKShare 获取A股股票列表...')
+        try:
+            df = self.ak_client.get_stock_info_a_code_name()
+            if not df.empty and len(df) > 0:
+                logger.info(f'AKShare 获取A股股票列表成功，共 {len(df)} 只')
+                return df
+            else:
+                logger.warning('AKShare 返回的A股股票列表为空')
+        except Exception as e:
+            logger.error(f'AKShare 获取A股股票列表失败: {e}')
+        
+        logger.error('所有数据源均无法获取A股股票列表')
+        return pd.DataFrame()
+    
     def get_stock_list_from_history(self, trade_date=None):
         """通过历史数据接口获取股票列表（推荐非交易时段使用）
         

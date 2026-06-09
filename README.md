@@ -5,7 +5,7 @@
 ## 功能特性
 
 - **9大核心策略**: 短线×3 + 中线×3 + 长线×3
-- **双数据源**: BaoStock + AKShare 数据适配
+- **数据源**: BaoStock 数据获取
 - **自动调度**: 每日17:45自动执行策略分析
 - **Web管理界面**: 股票列表、策略结果、每日记录
 - **Docker部署**: 一键部署到云服务器
@@ -16,7 +16,7 @@
 | --------- | -------------------------------------------- |
 | 后端      | FastAPI, SQLAlchemy, PostgreSQL, APScheduler |
 | 前端      | Vue3, Vite, Element Plus, Pinia, Axios       |
-| 数据      | BaoStock, AKShare, Pandas                    |
+| 数据      | BaoStock, Pandas                    |
 | 部署      | Docker, Docker Compose, Nginx                |
 | CI/CD     | GitHub Actions                               |
 

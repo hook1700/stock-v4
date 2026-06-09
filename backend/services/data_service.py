@@ -15,11 +15,14 @@ class DataService:
     def __init__(self):
         self.fetcher = DataFetcher()
     
-    def update_stock_list(self, db: Session, use_history_api=True, trade_date=None):
+    def update_stock_list(self, db: Session, use_history_api=True, trade_date=None, use_stock_info_api=False):
         """更新股票基础信息列表（包含申万二级行业）
         
-        优化后的流程（use_history_api=True 时）：
-        1. 通过历史数据接口获取股票列表（更稳定，适合非交易时段）
+        优化后的流程：
+        1. 获取股票列表（三种方式可选）
+           - use_stock_info_api=True: 使用 stock_info_a_code_name 接口（仅代码和名称，无交易信息，推荐）
+           - use_history_api=True: 通过历史数据接口获取股票列表（更稳定，适合非交易时段）
+           - 其他: 使用实时行情接口
         2. 获取行业分类信息
         3. 将行业信息更新到股票信息中
         
@@ -27,6 +30,7 @@ class DataService:
             db: 数据库会话
             use_history_api: 是否使用历史数据接口获取股票列表，默认为 True
             trade_date: 交易日期，格式 YYYYMMDD 或 YYYY-MM-DD，默认为昨天
+            use_stock_info_api: 是否使用 stock_info_a_code_name 接口获取股票列表（仅代码和名称），默认为 False
             
         Returns:
             dict: {'success': bool, 'count': int, 'error': str}
@@ -43,8 +47,12 @@ class DataService:
             db.refresh(update_record)
             
             # 步骤1: 获取股票列表
-            logger.info(f'开始获取股票列表 (use_history_api={use_history_api})...')
-            if use_history_api:
+            logger.info(f'开始获取股票列表 (use_stock_info_api={use_stock_info_api}, use_history_api={use_history_api})...')
+            
+            # 优先使用 stock_info_a_code_name 接口（仅获取代码和名称，无交易信息）
+            if use_stock_info_api:
+                df = self.fetcher.get_stock_info_a_code_name()
+            elif use_history_api:
                 df = self.fetcher.get_stock_list_from_history(trade_date=trade_date)
             else:
                 df = self.fetcher.get_stock_list()
