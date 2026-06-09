@@ -52,6 +52,15 @@ class StrategyService:
             strategy = self.strategies[strategy_index - 1]
             logger.info(f'开始执行策略: {strategy.name} ({strategy_index})')
             
+            # 先删除该策略在该交易日期的旧结果，避免唯一约束冲突
+            deleted_count = db.query(StrategyResult).filter(
+                StrategyResult.strategy_id == strategy_index,
+                StrategyResult.trade_date == trade_date
+            ).delete()
+            if deleted_count > 0:
+                logger.info(f'删除了 {deleted_count} 条旧结果')
+            db.commit()
+            
             # 创建执行日志
             log = StrategyExecutionLog(
                 strategy_id=strategy_index,
@@ -132,11 +141,19 @@ class StrategyService:
             
         except Exception as e:
             logger.error(f'策略执行失败: {e}')
+            # 异常时回滚事务
+            try:
+                db.rollback()
+            except Exception:
+                pass
             if log:
                 log.status = 'failed'
                 log.error_message = str(e)
                 log.completed_at = datetime.now()
-                db.commit()
+                try:
+                    db.commit()
+                except Exception:
+                    pass
             return {'success': False, 'error': str(e)}
     
     def run_all_strategies(self, db: Session, trade_date: date = None):
@@ -148,10 +165,21 @@ class StrategyService:
         
         for i in range(1, 10):
             try:
+                # 在每个策略执行前确保事务状态正确
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                
                 result = self.run_strategy(i, db, trade_date)
                 all_results[self.strategies[i-1].name] = result
             except Exception as e:
                 logger.error(f'策略 {i} 执行失败: {e}')
+                # 确保异常后回滚事务
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
                 all_results[self.strategies[i-1].name] = {'success': False, 'error': str(e)}
         
         return all_results
