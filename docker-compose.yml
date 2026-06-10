@@ -7,6 +7,7 @@ services:
       POSTGRES_USER: stock_user
       POSTGRES_PASSWORD: stock_pass
       POSTGRES_DB: stock_analysis
+      TZ: Asia/Shanghai
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -21,6 +22,8 @@ services:
     image: redis:7-alpine
     container_name: stock-redis
     restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
     volumes:
       - redis_data:/data
     ports:
@@ -37,6 +40,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       DEBUG: "false"
       SECRET_KEY: ${SECRET_KEY:-stock-analysis-secret-key-2024}
+      TZ: Asia/Shanghai
     ports:
       - "8000:8000"
     depends_on:
@@ -53,6 +57,8 @@ services:
       dockerfile: Dockerfile
     container_name: stock-frontend
     restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
     ports:
       - "80:80"
     depends_on:

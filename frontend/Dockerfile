@@ -1,6 +1,10 @@
 # 构建阶段
 FROM node:20-alpine AS builder
 
+# 设置时区为 Asia/Shanghai (北京时间 UTC+8)
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 WORKDIR /app
 
 # 复制依赖文件
@@ -18,6 +22,10 @@ RUN npm run build
 
 # 生产阶段 - 使用Nginx
 FROM nginx:alpine
+
+# 设置时区为 Asia/Shanghai (北京时间 UTC+8)
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # 复制构建产物
 COPY --from=builder /app/dist /usr/share/nginx/html

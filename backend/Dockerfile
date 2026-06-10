@@ -1,5 +1,9 @@
 FROM python:3.11-slim
 
+# 设置时区为 Asia/Shanghai (北京时间 UTC+8)
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 WORKDIR /app
 
 # 替换为阿里云镜像源，加速 apt 下载
