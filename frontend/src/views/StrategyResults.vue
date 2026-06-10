@@ -107,7 +107,13 @@
       </template>
       
       <el-table :data="results" v-loading="loading" stripe>
-        <el-table-column prop="stock_code" label="股票代码" width="110" />
+        <el-table-column label="股票代码" width="110">
+          <template #default="scope">
+            <a :href="`https://stockpage.10jqka.com.cn/${scope.row.stock_code}/`" target="_blank" style="color: #409EFF; text-decoration: none;">
+              {{ scope.row.stock_code }}
+            </a>
+          </template>
+        </el-table-column>
         <el-table-column prop="stock_name" label="股票名称" width="120" />
         <el-table-column prop="strategy_name" label="策略名称" width="180" />
         <el-table-column prop="signal_type" label="信号" width="80">
@@ -152,7 +158,7 @@
     <!-- 详情弹窗 -->
     <el-dialog v-model="detailVisible" :title="'选股详情'" width="600px">
       <div v-if="selectedResult">
-        <p><strong>股票代码:</strong> {{ selectedResult.stock_code }}</p>
+        <p><strong>股票代码:</strong> <a :href="`https://stockpage.10jqka.com.cn/${selectedResult.stock_code}/`" target="_blank" style="color: #409EFF; text-decoration: none;">{{ selectedResult.stock_code }}</a></p>
         <p><strong>股票名称:</strong> {{ selectedResult.stock_name }}</p>
         <p><strong>策略:</strong> {{ selectedResult.strategy_name }}</p>
         <p><strong>信号类型:</strong> {{ selectedResult.signal_type }}</p>
